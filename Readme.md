@@ -1,3 +1,14 @@
+# Version 3.1
+
+This version adds the ability to use middle-clicks to close tabs. It also fixes the following issues:
+
+* Only invoke tab switching if the <kbd>Alt</kbd> key was pressed which fixes issues with the <kbd>AltGr</kbd> on some European layouts.
+* Fixed a problem where the wrong menu item was checked (location of close button).
+* Fixed a problem where hardcoded English window titles were used, e. g., Immediate. This affects Immediate, Locals, and Watch windows.
+* The add-in now detects open tool windows upon activation and correctly groups them into the tabbed window.
+* Removed the non-implemented task list.
+
+
 # Version 3.0
 
 All code in this repository is released, with permission from Luthfi, under the

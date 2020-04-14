@@ -23,7 +23,6 @@ Private m_Subclass As cSubclass
 Private m_SubClassPlugin As ICHPlugin
 
 Implements ISubclass
-
 Sub StartMonitor()
     
     Set m_KeyHook = New HookGate
@@ -52,60 +51,55 @@ End Sub
 
 Sub KeyProc(bHandled As Boolean, lReturn As Long, wParam As Long, lParam As Long)
 On Error Resume Next
-    Dim oPlugin As ICHPlugin
-    
-    For Each oPlugin In mCHCore.Plugins
-        
-        If oPlugin.Enabled Then
-            If bHandled = False Then
-                oPlugin.OnKeyHook bHandled, lReturn, wParam, lParam
-                
-            End If
-        End If
-    Next
-End Sub
+  Dim oPlugin As ICHPlugin
 
-Sub CWPMSGProc(ByVal hwnd As Long, ByVal uMsg As Long, ByVal wParam As Long, ByVal lParam As Long)
-'On Error Resume Next
-    Dim oPlugin As ICHPlugin
-    Dim bHandled As Boolean, placeSubclass As Boolean, before As Boolean
-    For Each oPlugin In mCHCore.Plugins
-        
-        If oPlugin.Enabled Then
-            
-            If bHandled = False Then
-                placeSubclass = False
-                before = False
-                oPlugin.OnWinProcHook hwnd, uMsg, wParam, lParam, bHandled, placeSubclass, before
-                
-                If placeSubclass Then
-                    Set m_SubClassPlugin = oPlugin
-                    If before Then
-                        SubclassThisWindowMsg hwnd, uMsg, MSG_BEFORE
-                    Else
-                        SubclassThisWindowMsg hwnd, uMsg, MSG_AFTER
-                    End If
-                    Exit For 'currently only support one oPlugin per subclassed msg
-                End If
-            End If
-        End If
-    Next
-End Sub
-
-Private Sub ISubclass_Proc(ByVal bBefore As Boolean, bHandled As Boolean, lReturn As Long, hwnd As Long, uMsg As Long, wParam As Long, lParam As Long)
-    If m_SubClassPlugin.Enabled Then
-        m_SubClassPlugin.OnWinProc hwnd, uMsg, wParam, lParam, bHandled, lReturn
+  For Each oPlugin In mCHCore.Plugins
+    If oPlugin.Enabled Then
+      If bHandled = False Then
+        oPlugin.OnKeyHook bHandled, lReturn, wParam, lParam
+      End If
     End If
-    'we're done so unsubclass right away
-    'add reference lock for win98
-    Set lockSubclass = m_Subclass
+  Next
+End Sub
+
+Sub CWPMSGProc(ByVal hWnd As Long, ByVal uMsg As Long, ByVal wParam As Long, ByVal lParam As Long)
+'On Error Resume Next
+  Dim oPlugin As ICHPlugin
+  Dim bHandled As Boolean, placeSubclass As Boolean, before As Boolean
+
+  For Each oPlugin In mCHCore.Plugins
+    If oPlugin.Enabled Then
+      If bHandled = False Then
+        placeSubclass = False
+        before = False
+        oPlugin.OnWinProcHook hWnd, uMsg, wParam, lParam, bHandled, placeSubclass, before
+
+        If placeSubclass Then
+          Set m_SubClassPlugin = oPlugin
+          If before Then
+            SubclassThisWindowMsg hWnd, uMsg, MSG_BEFORE
+          Else
+            SubclassThisWindowMsg hWnd, uMsg, MSG_AFTER
+          End If
+          Exit For 'currently only support one oPlugin per subclassed msg
+        End If
+      End If
+    End If
+  Next
+End Sub
+
+Private Sub ISubclass_Proc(ByVal bBefore As Boolean, bHandled As Boolean, lReturn As Long, hWnd As Long, uMsg As Long, wParam As Long, lParam As Long)
+    If m_SubClassPlugin.Enabled Then
+        m_SubClassPlugin.OnWinProc hWnd, uMsg, wParam, lParam, bHandled, lReturn
+    End If
     m_Subclass.UnSubclass
     Set m_Subclass = Nothing
     Set m_SubClassPlugin = Nothing
 End Sub
 
-Private Sub SubclassThisWindowMsg(ByVal hwnd As Long, ByVal uMsg As Long, ByVal MsgWhen As enMsgWhen)
-    Set m_Subclass = New cSubclass
-    m_Subclass.AddMsg uMsg, MsgWhen
-    m_Subclass.Subclass hwnd, Me
+Private Sub SubclassThisWindowMsg(ByVal hWnd As Long, ByVal uMsg As Long, ByVal MsgWhen As enMsgWhen)
+  Set m_Subclass = New cSubclass
+  m_Subclass.AddMsg uMsg, MsgWhen
+  m_Subclass.Subclass hWnd, Me
 End Sub
+

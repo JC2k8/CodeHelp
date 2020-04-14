@@ -24,20 +24,19 @@ Function HiWord(lDWord As Long) As Integer
 End Function
 
 Function GetWinText(hWnd As Long, Optional className As Boolean = False) As String
-    'some static vars to speed up things, this func will be called many times
-    Static sBuffer As String * 128& 'is it safe to use 128 bytes? should be enough..
-    Static textLength As Long
-  
-    If className Then
-        textLength = A_GetClassName(hWnd, sBuffer, 129&)
-    Else
-        textLength = A_GetWindowText(hWnd, sBuffer, 129&)
-    End If
-  
-    If textLength > 0 Then
-        GetWinText = Left$(sBuffer, textLength)
-    End If
+  Dim sBuffer    As String
+  Dim textLength As Long
 
+  SysReAllocStringLen sBuffer, 0, MAX_PATH
+  If className Then
+    textLength = A_GetClassName(hWnd, sBuffer, MAX_PATH_PLUS_ONE)
+  Else
+    textLength = A_GetWindowText(hWnd, sBuffer, MAX_PATH_PLUS_ONE)
+  End If
+
+  If textLength > 0 Then
+    GetWinText = Left$(sBuffer, textLength)
+  End If
 End Function
 
 Function GetOSVersion() As enWinVersion

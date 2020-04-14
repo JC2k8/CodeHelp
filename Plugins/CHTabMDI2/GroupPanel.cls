@@ -15,24 +15,21 @@ Option Explicit
 
 'Plugin const
 Private Const CH_LONGNAME As String = "Tabbed Tool Window"
-Private Const CH_DESCRIPTION As String = "Group multiple tool windows into one tabbed tool window"
+Private Const CH_DESCRIPTION As String = "Group multiple tool windows into one tab-based tool window."
 Private Const CH_COPYRIGHT As String = "luthv@yahoo.com"
 
 Private Const TOOL_GUID As String = "{84AA41C0-3FE3-4ea0-8F6F-E70319277E9E}"
 Private Const TAB_HEIGHT = 20
 
 Private Const VBA_WIN As String = "VbaWindow"
-Private Const IMMED As String = "Immediate"
-Private Const WATCH As String = "Watches"
-Private Const LOCALS As String = "Locals"
-Private Const TASK_LIST As String = "Task List"
+'Private Const TASK_LIST As String = "Task List"
 Private Const VBPALETTE As String = "VBFloatingPalette"
 
 Private Type PanelStateStruct
-    Caption As String
-    ParenthWnd As Long
-    VbahWnd As Long
-    PreviouslyDocked As Long
+  Caption          As String
+  ParenthWnd       As Long
+  VbahWnd          As Long
+  PreviouslyDocked As Long
 End Type
 
 Private m_lPtr          As Long
@@ -40,16 +37,39 @@ Private toolWindow      As Window
 Private docWindow       As DockWindow
 Private m_Enabled       As Boolean
 
-Private WithEvents m_tabManager       As TabManager
-Attribute m_tabManager.VB_VarHelpID = -1
 Private m_hWnd                  As Long
-Private m_DockedPanels()        As PanelStateStruct
 Private m_PanelCount            As Long
+Private WithEvents m_tabManager As TabManager
+Attribute m_tabManager.VB_VarHelpID = -1
+Private m_DockedPanels()        As PanelStateStruct
+Private m_winImmediate          As String
+Private m_winWatch              As String
+Private m_winLocals             As String
+
+Private m_bReactToWindowMsgs As Boolean
 
 Implements ICHPlugin
 
+Private Function GetLocalizedVbaWinTitle(ByVal dsr As ICHCore, WinType As vbext_WindowType) As String
+  Dim l As Long
+
+  'retrieve the specified window's title to account for internationalization
+  With dsr.VBE
+    For l = 1 To .Windows.Count
+      If .Windows(l).Type = WinType Then
+        GetLocalizedVbaWinTitle = .Windows(l).Caption
+        Exit Function
+      End If
+    Next
+  End With
+End Function
+
+Private Sub Class_Initialize()
+  m_bReactToWindowMsgs = True
+End Sub
+
 Private Sub Class_Terminate()
-    Set toolWindow = Nothing
+  Set toolWindow = Nothing
 End Sub
 
 Private Property Let ICHPlugin_CHCore(ByVal RHS As Long)
@@ -109,47 +129,43 @@ End Sub
 
 Private Sub ICHPlugin_OnDisconnect(ByVal RemoveMode As CodeHelpDef.ext_DisconnectMode, _
                                    custom() As Variant)
-    'Do your clean up here
-    Dim tR As RECT
-    Dim i As Long
-    Dim dsr As ICHCore
-    Dim vbaWin As Window
-    
-    m_Enabled = False
-    If Not toolWindow Is Nothing Then
-        If toolWindow.Visible Then
-            
-            toolWindow.Visible = False
-            
-            m_tabManager.RemoveAll False
-            
-            Set dsr = GetCHCore(m_lPtr)
-            
-            If m_PanelCount > 0 Then
-                For i = 0 To UBound(m_DockedPanels)
-                    GetClientRect m_DockedPanels(i).ParenthWnd, tR
-                    
-                    SetParent m_DockedPanels(i).VbahWnd, m_DockedPanels(i).ParenthWnd
-                    ShowWindow m_DockedPanels(i).ParenthWnd, SW_SHOW
-                    
-                    SetWindowPos m_DockedPanels(i).VbahWnd, 0, 0, 0, tR.Right, tR.Bottom, SWP_NOZORDER Or SWP_FRAMECHANGED
-                    
-                    If m_DockedPanels(i).PreviouslyDocked = 1 Then
-                        For Each vbaWin In dsr.VBE.Windows
-                            If vbaWin.Caption = m_DockedPanels(i).Caption Then
-                                dsr.VBE.MainWindow.LinkedWindows.Add vbaWin
-                                Exit For
-                            End If
-                        Next
-                        
-                    End If
-                Next
-            End If
-            
-            Erase m_DockedPanels
-        End If
+  'Do your clean up here
+  Dim tR     As RECT
+  Dim i      As Long
+  Dim dsr    As ICHCore
+  Dim vbaWin As Window
+
+  m_Enabled = False
+  If Not toolWindow Is Nothing Then
+    If toolWindow.Visible Then
+
+      toolWindow.Visible = False
+      m_tabManager.RemoveAll False
+      Set dsr = GetCHCore(m_lPtr)
+      If m_PanelCount > 0 Then
+        For i = 0 To UBound(m_DockedPanels)
+          GetClientRect m_DockedPanels(i).ParenthWnd, tR
+
+          SetParent m_DockedPanels(i).VbahWnd, m_DockedPanels(i).ParenthWnd
+          ShowWindow m_DockedPanels(i).ParenthWnd, SW_SHOW
+
+          SetWindowPos m_DockedPanels(i).VbahWnd, 0, 0, 0, tR.Right, tR.Bottom, SWP_NOZORDER Or SWP_FRAMECHANGED
+
+          If m_DockedPanels(i).PreviouslyDocked = 1 Then
+            For Each vbaWin In dsr.VBE.Windows
+              If vbaWin.Caption = m_DockedPanels(i).Caption Then
+                dsr.VBE.MainWindow.LinkedWindows.Add vbaWin
+                Exit For
+              End If
+            Next
+          End If
+        Next
+      End If
+
+      Erase m_DockedPanels
     End If
-    m_PanelCount = 0
+  End If
+  m_PanelCount = 0
 End Sub
 
 Private Sub ICHPlugin_OnKeyHook(bHandled As Boolean, _
@@ -165,141 +181,107 @@ Private Sub ICHPlugin_OnWinProc(ByVal hWnd As Long, _
                                 lParam As Long, _
                                 bHandled As Boolean, _
                                 lReturn As Long)
-    'subclassed message goes here
-    On Error GoTo ERR_HANDLER
-    
-    Select Case uMsg
-        Case WM_NCCALCSIZE
-            OnNCCalcSize lParam
-        
-        Case WM_NCHITTEST
-            lReturn = OnNCHittest(lParam)
-            
-        Case WM_ACTIVATE
-            m_tabManager.RequestRedraw
-            
-        Case WM_WINDOWPOSCHANGING
-            'don't let VB reshow the old floating palette
-'            Dim tWP As WINDOWPOS, bProcess As Boolean, i As Long
-'            If m_PanelCount > 0 Then
-'                For i = 0 To m_PanelCount - 1
-'                    If m_DockedPanels(i).ParenthWnd = hWnd Then
-'                        bProcess = True
-'                        Exit For
-'                    End If
-'                Next
-'
-'                If bProcess Then
-'                    CopyMemory tWP, ByVal lParam, Len(tWP)
-'
-'                    If (tWP.flags And SWP_SHOWWINDOW) = SWP_SHOWWINDOW Then
-'                        tWP.flags = tWP.flags And Not SWP_SHOWWINDOW
-'                        CopyMemory ByVal lParam, tWP, Len(tWP)
-'                    End If
-'                End If
-'
-'            End If
-            
-            OnWindowPosChanging hWnd, lParam
-    End Select
-    Exit Sub
+  'subclassed message goes here
+  On Error GoTo ERR_HANDLER
+
+  Select Case uMsg
+    Case WM_NCCALCSIZE
+      OnNCCalcSize lParam
+
+    Case WM_NCHITTEST
+      lReturn = OnNCHittest(lParam)
+
+    Case WM_ACTIVATE
+      m_tabManager.RequestRedraw
+
+    Case WM_WINDOWPOSCHANGING
+      OnWindowPosChanging hWnd, lParam
+  End Select
+  Exit Sub
+
 ERR_HANDLER:
-    m_tabManager.LockUpdateRequest False, True
+  m_tabManager.LockUpdateRequest False, True
 End Sub
 
 Private Sub ICHPlugin_OnWinProcHook(ByVal hWnd As Long, ByVal uMsg As Long, ByVal wParam As Long, ByVal lParam As Long, _
                                     bHandled As Boolean, placeSubclass As Boolean, before As Boolean)
-    'Hook msg goes here
-    Dim bProcess As Boolean, i As Long
-    Dim item As TabItem
-    
-    Select Case uMsg
-        Case WM_NCCALCSIZE, WM_NCHITTEST
-            If hWnd <> m_hWnd Then Exit Sub
-            'need to subclass to modify the return value
-            placeSubclass = True
-            before = False
-            
-        Case WM_NCPAINT
-            If hWnd <> m_hWnd Then Exit Sub
-            m_tabManager.RequestRedraw
-        
-        Case WM_WINDOWPOSCHANGED
-            OnWindowPosChanged hWnd, lParam
-            
-        Case WM_WINDOWPOSCHANGING
+  'Hook msg goes here
+  Dim bProcess As Boolean, i As Long
+  Dim Item As TabItem
 
-'            If m_PanelCount > 0 Then
-'                For i = 0 To m_PanelCount - 1
-'                    If m_DockedPanels(i).ParenthWnd = hWnd Then
-'                        bProcess = True
-'                        Exit For
-'                    End If
-'                Next
-'
-'                If bProcess Then
-'                    placeSubclass = True
-'                    before = True
-'                End If
-'            End If
-            placeSubclass = True
-            before = True
-                    
-        Case (WM_USER + 3139) 'Catch window activation from menu
-            If wParam = 1 And m_PanelCount > 0 Then
-                For i = 0 To m_PanelCount - 1
-                    If m_DockedPanels(i).VbahWnd = hWnd Then
-                        bProcess = True
-                        Exit For
-                    End If
-                Next
-                If bProcess Then
-                    For Each item In m_tabManager.Items
-                        If CLng(item.ChildhWnd) = hWnd Then
-                            item.Selected = True
-                            m_tabManager_ItemClick item
-                            Exit For
-                        End If
-                    Next
-                    'in case the CodeHelp panel is closed
-                    toolWindow.Visible = True
-                    SetFocusApi hWnd
-                End If
+  Select Case uMsg
+    Case WM_NCCALCSIZE, WM_NCHITTEST
+      If hWnd <> m_hWnd Then Exit Sub
+      'need to subclass to modify the return value
+      placeSubclass = True
+      before = False
+
+    Case WM_NCPAINT
+      If hWnd <> m_hWnd Then Exit Sub
+      m_tabManager.RequestRedraw
+
+    Case WM_WINDOWPOSCHANGED
+      OnWindowPosChanged hWnd, lParam
+
+    Case WM_WINDOWPOSCHANGING
+      placeSubclass = True
+      before = True
+
+    Case (WM_USER + 3139) 'Catch window activation from menu
+      If wParam = 1 And m_PanelCount > 0 Then
+        For i = 0 To m_PanelCount - 1
+          If m_DockedPanels(i).VbahWnd = hWnd Then
+            bProcess = True
+            Exit For
+          End If
+        Next
+        If bProcess Then
+          For Each Item In m_tabManager.Items
+            If CLng(Item.ChildhWnd) = hWnd Then
+              Item.Selected = True
+              m_tabManager_ItemClick Item
+              Exit For
             End If
-        
-        Case WM_NCLBUTTONDOWN, WM_NCRBUTTONDOWN, WM_NCMOUSEMOVE, _
-            WM_NCLBUTTONUP, WM_NCRBUTTONUP, WM_NCLBUTTONDBLCLK
-            
-            Dim tPt As POINTAPI
-            Dim Button As MouseButtonConstants
-            
-            If hWnd <> m_hWnd Then Exit Sub
-            tPt = GetMousePos(lParam)
-            
-            Select Case uMsg
+          Next
+          'in case the CodeHelp panel is closed
+          toolWindow.Visible = True
+          SetFocusApi hWnd
+        End If
+      End If
 
-                Case WM_NCLBUTTONDOWN
-                    m_tabManager.OnLMouseDown tPt.x, tPt.y
-                
-                Case WM_NCMOUSEMOVE
-                    If GetAsyncKeyState(VK_LBUTTON) Then
-                        Button = vbLeftButton
-                    End If
+    Case WM_NCLBUTTONDOWN, WM_NCRBUTTONDOWN, WM_NCMOUSEMOVE, _
+      WM_NCLBUTTONUP, WM_NCRBUTTONUP, WM_NCLBUTTONDBLCLK, WM_NCMBUTTONUP
 
-                    m_tabManager.OnMouseMove Button, tPt.x, tPt.y
+      Dim tPt As POINTAPI
+      Dim Button As MouseButtonConstants
 
-                Case WM_NCLBUTTONUP
-                    m_tabManager.OnMouseUp vbLeftButton, tPt.x, tPt.y
-                    
-                Case WM_NCRBUTTONUP
-                    m_tabManager.OnMouseUp vbRightButton, tPt.x, tPt.y
-                    
-                Case WM_NCLBUTTONDBLCLK 'treat double click as one click
-                    m_tabManager.OnLMouseDown tPt.x, tPt.y
-                    m_tabManager.OnMouseUp vbLeftButton, tPt.x, tPt.y
-                    
-            End Select
-    End Select
+      If hWnd <> m_hWnd Then Exit Sub
+      tPt = GetMousePos(lParam)
+
+      Select Case uMsg
+        Case WM_NCLBUTTONDOWN
+          m_tabManager.OnLMouseDown tPt.x, tPt.y
+
+        Case WM_NCMOUSEMOVE
+          If GetAsyncKeyState(VK_LBUTTON) Then
+            Button = vbLeftButton
+          End If
+          m_tabManager.OnMouseMove Button, tPt.x, tPt.y
+
+        Case WM_NCLBUTTONUP
+          m_tabManager.OnMouseUp vbLeftButton, tPt.x, tPt.y
+
+        Case WM_NCRBUTTONUP
+          m_tabManager.OnMouseUp vbRightButton, tPt.x, tPt.y
+
+        Case WM_NCMBUTTONUP
+          m_tabManager.OnMouseUp vbMiddleButton, tPt.x, tPt.y
+
+        Case WM_NCLBUTTONDBLCLK 'treat double click as one click
+          m_tabManager.OnLMouseDown tPt.x, tPt.y
+          m_tabManager.OnMouseUp vbLeftButton, tPt.x, tPt.y
+      End Select
+  End Select
 End Sub
 
 Private Sub ICHPlugin_ShowHelp()
@@ -316,19 +298,26 @@ End Property
 
 
 Private Sub Initialize(ByVal dsr As ICHCore)
-    
-    Set m_tabManager = New TabManager
-    
-    Set dsr = GetCHCore(m_lPtr)
-        
-    DockVBAWindow dsr, WATCH
-    DockVBAWindow dsr, LOCALS
-    DockVBAWindow dsr, IMMED
-    
-    m_tabManager.InsertItem TASK_LIST
-    
-    SetWindowPos m_hWnd, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or _
-        SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED
+  Set m_tabManager = New TabManager
+  Set dsr = GetCHCore(m_lPtr)
+
+  If toolWindow Is Nothing Then
+    Set toolWindow = dsr.VBE.Windows.CreateToolWindow(dsr.AddInInst, "CHTabMDI.DockWindow", "CodeHelp Panel", TOOL_GUID, docWindow)
+  End If
+  toolWindow.Visible = False
+  m_hWnd = docWindow.hWnd
+
+  'retrieve localized window captions
+  m_winWatch = GetLocalizedVbaWinTitle(dsr, vbext_wt_Watch)
+  m_winImmediate = GetLocalizedVbaWinTitle(dsr, vbext_wt_Immediate)
+  m_winLocals = GetLocalizedVbaWinTitle(dsr, vbext_wt_Locals)
+  
+  DockVBAWindow dsr, m_winImmediate
+  DockVBAWindow dsr, m_winWatch
+  DockVBAWindow dsr, m_winLocals
+
+  SetWindowPos m_hWnd, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or _
+      SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED
 End Sub
 
 Private Sub Terminate()
@@ -390,173 +379,141 @@ Private Sub m_tabManager_DrawFinished(ByVal hdc As Long)
 End Sub
 
 Private Sub m_tabManager_ItemChanging(ByVal toItem As TabItem, Cancel As Boolean)
-    Dim item As TabItem
-    Dim ChildhWnd As Long
-    
-    Set item = m_tabManager.SelectedItem
-    If Not item Is Nothing Then
-        If item.Caption = TASK_LIST Then
-            ChildhWnd = docWindow.RealhWnd
-        Else
-            ChildhWnd = item.ChildhWnd
-        End If
-        ShowWindow ChildhWnd, SW_HIDE
-    End If
+  Dim Item As TabItem
+  Dim ChildhWnd As Long
+  
+  Set Item = m_tabManager.SelectedItem
+  If Not Item Is Nothing Then
+'    If item.Caption = TASK_LIST Then
+'      ChildhWnd = docWindow.RealhWnd
+'    Else
+      ChildhWnd = Item.ChildhWnd
+'    End If
+    ShowWindow ChildhWnd, SW_HIDE
+  End If
 End Sub
 
-Private Sub m_tabManager_ItemClick(ByVal item As TabItem)
-    If item.Caption = TASK_LIST Then
-        ShowWindow docWindow.RealhWnd, SW_SHOW
-    Else
-        ShowWindow CLng(item.ChildhWnd), SW_SHOW
-    End If
+Private Sub m_tabManager_ItemClick(ByVal Item As TabItem)
+'  If item.Caption = TASK_LIST Then
+'    ShowWindow docWindow.RealhWnd, SW_SHOW
+'  Else
+    ShowWindow CLng(Item.ChildhWnd), SW_SHOW
+'  End If
+End Sub
+
+Private Sub m_tabManager_MouseUp(ByVal Button As MouseButtonConstants, ByVal Item As TabItem)
+  Dim itmHwnd As Long
+
+  If Button = vbMiddleButton Then
+    itmHwnd = CLng(Item.ChildhWnd)
+    A_SendMessage itmHwnd, WM_SYSCOMMAND, SC_CLOSE, 0&
+    m_tabManager.RemoveItem Item
+  End If
 End Sub
 
 Private Sub m_tabManager_RequestRedraw(hdc As Long)
-    hdc = GetWindowDC(m_hWnd)
-    SetBkMode hdc, TRANSPARENT
+  hdc = GetWindowDC(m_hWnd)
+  SetBkMode hdc, TRANSPARENT
 End Sub
 
 Private Sub OnWindowPosChanged(ByVal hWnd As Long, ByVal lParam As Long)
-    Dim tWP As WINDOWPOS
-    Dim winCaption As String
-    Dim bProcess As Boolean
-        
-    If hWnd = m_hWnd Then
-        CopyMemory tWP, ByVal lParam, Len(tWP)
-        If (tWP.flags And SWP_NOSIZE) = 0 Then
-            MoveTabStrip
-        End If
+  Dim tWP As WINDOWPOS
+
+  If hWnd = m_hWnd Then
+    CopyMemory tWP, ByVal lParam, Len(tWP)
+    If (tWP.flags And SWP_NOSIZE) = 0 Then
+      MoveTabStrip
     End If
+  End If
 End Sub
 
-'Private Sub OnWindowPosChanged(ByVal hWnd As Long, ByVal lParam As Long)
-'    Dim tWP As WINDOWPOS
-'    Dim winCaption As String
-'    Dim bProcess As Boolean
-'
-'    If hWnd = m_hWnd Then
-'        bProcess = True
-'    Else
-'        If GetWinText(hWnd, True) = VBA_WIN Then
-'            winCaption = GetWinText(hWnd)
-'
-'            Select Case winCaption
-'
-'                Case IMMED, WATCH, LOCALS
-'
-'                    bProcess = True
-'
-'            End Select
-'        End If
-'    End If
-'
-'    If bProcess Then
-'        CopyMemory tWP, ByVal lParam, Len(tWP)
-'        If (tWP.flags And SWP_NOSIZE) = 0 Then
-'            MoveTabStrip
-'        ElseIf (tWP.flags And SWP_SHOWWINDOW) = SWP_SHOWWINDOW Then
-'
-'            If m_hWnd <> hWnd Then
-'                DockVBAWindow GetCHCore(m_lPtr), winCaption
-'
-'                SetWindowPos m_hWnd, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or _
-'                    SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED
-'            End If
-'        End If
-'    End If
-'End Sub
-
 Private Sub DockVBAWindow(ByVal dsr As ICHCore, ByVal winName As String) 'As Long
-    Dim vbaWin As Window
-    Dim item As TabItem
-    Dim panelState As PanelStateStruct
-    Dim bNeedReDocked As Boolean
-    
-    Set vbaWin = dsr.VBE.Windows(winName)
-    
-    panelState.VbahWnd = A_FindWindowEx(dsr.VBE.MainWindow.hWnd, 0, VBA_WIN, winName)
-    
-    If panelState.VbahWnd <> 0 Then
-        For Each item In m_tabManager.Items
-            If CLng(item.ChildhWnd) = panelState.VbahWnd Then
-                If IsChild(m_hWnd, panelState.VbahWnd) Then
-                    Exit Sub
-                Else
-                'vb has redock our window to it's original parent
-                    bNeedReDocked = True
-                    Exit For
-                End If
-            End If
-        Next
-        
-        'window is docked, undock it
-        panelState.PreviouslyDocked = 1
-        'temporary disable add in, cause undocking caused nested call to WM_WINDOWPOSCHANGED
-        m_Enabled = False
-        dsr.VBE.MainWindow.LinkedWindows.Remove vbaWin
-        'reenable
-        m_Enabled = True
+  Dim vbaWin        As Window
+  Dim Item          As TabItem
+  Dim panelState    As PanelStateStruct
+  Dim bNeedReDocked As Boolean
+
+  Set vbaWin = dsr.VBE.Windows(winName)
+
+  With panelState
+    .VbahWnd = A_FindWindowEx(dsr.VBE.MainWindow.hWnd, 0, VBA_WIN, winName)
+    If .VbahWnd <> 0 Then
+      For Each Item In m_tabManager.Items
+        If CLng(Item.ChildhWnd) = .VbahWnd Then
+          If IsChild(m_hWnd, .VbahWnd) Then
+            Exit Sub
+          Else
+            'vb has redock our window to it's original parent
+            bNeedReDocked = True
+            Exit For
+          End If
+        End If
+      Next
+
+      'window is docked, undock it
+      .PreviouslyDocked = 1
+      'temporary disable add in, cause undocking caused nested call to WM_WINDOWPOSCHANGED
+      m_bReactToWindowMsgs = False
+      dsr.VBE.MainWindow.LinkedWindows.Remove vbaWin
+      m_bReactToWindowMsgs = True
     End If
-    
+  
     'now find the floating palette containing our window
-    panelState.ParenthWnd = A_FindWindowEx(0, panelState.ParenthWnd, VBPALETTE, vbNullString)
+    .ParenthWnd = A_FindWindowEx(0, .ParenthWnd, VBPALETTE, vbNullString)
     'see if it belong to current IDE instance
     Do While (panelState.ParenthWnd <> 0)
-        If GetWindowThreadProcessId(panelState.ParenthWnd, 0) = App.ThreadID Then
+      If GetWindowThreadProcessId(.ParenthWnd, 0) = App.ThreadID Then
         'get the real immediate window from the palette
-            panelState.VbahWnd = A_FindWindowEx(panelState.ParenthWnd, 0, VBA_WIN, winName)
-            If panelState.VbahWnd <> 0 Then Exit Do
-        End If
-        panelState.ParenthWnd = A_FindWindowEx(0, panelState.ParenthWnd, VBPALETTE, vbNullString)
+        .VbahWnd = A_FindWindowEx(.ParenthWnd, 0, VBA_WIN, winName)
+        If .VbahWnd <> 0 Then Exit Do
+      End If
+      .ParenthWnd = A_FindWindowEx(0, .ParenthWnd, VBPALETTE, vbNullString)
     Loop
-        
-    If panelState.VbahWnd <> 0 Then
-        bNeedReDocked = False
-        For Each item In m_tabManager.Items
-            If CLng(item.ChildhWnd) = panelState.VbahWnd Then
-                If IsChild(m_hWnd, panelState.VbahWnd) Then
-                    Exit Sub
-                Else
-                'vb has redock our window to it's original parent
-                    
-                    bNeedReDocked = True
-                    Exit For
-                End If
-            End If
-        Next
-        
-        If toolWindow Is Nothing Then
-            Set toolWindow = dsr.VBE.Windows.CreateToolWindow(dsr.AddInInst, "CHTabMDI.DockWindow", "CodeHelp Panel", TOOL_GUID, docWindow)
-        End If
-        toolWindow.Visible = True
-        m_hWnd = docWindow.hWnd
-        
 
-        SetParent panelState.VbahWnd, m_hWnd
-        panelState.Caption = winName
-        
-        ShowWindow panelState.ParenthWnd, SW_HIDE
-
-        If Not bNeedReDocked Then
-            Set item = m_tabManager.InsertItem(winName, , , vbaWin.Visible)
-            item.ChildhWnd = panelState.VbahWnd
-            
-            If item.Visible Then item.Selected = True
-            
-            ReDim Preserve m_DockedPanels(m_PanelCount)
-            m_DockedPanels(m_PanelCount) = panelState
-                    
-            m_PanelCount = m_PanelCount + 1&
-        Else
-            
-            item.Visible = True
-            item.Selected = True
-            ShowWindow panelState.VbahWnd, SW_SHOW
-            SetFocusApi panelState.VbahWnd
+    If .VbahWnd <> 0 Then
+      bNeedReDocked = False
+      For Each Item In m_tabManager.Items
+        If CLng(Item.ChildhWnd) = .VbahWnd Then
+          If IsChild(m_hWnd, .VbahWnd) Then
+            Exit Sub
+          Else
+            'vb has redock our window to it's original parent
+            bNeedReDocked = True
+            Exit For
+          End If
         End If
+      Next
+
+      'create tool window if it's not already created
+      If toolWindow Is Nothing Then
+        Set toolWindow = dsr.VBE.Windows.CreateToolWindow(dsr.AddInInst, "CHTabMDI.DockWindow", "CodeHelp Panel", TOOL_GUID, docWindow)
+      End If
+      toolWindow.Visible = True
+      m_hWnd = docWindow.hWnd
+
+      'establish parent/child connection
+      SetParent .VbahWnd, m_hWnd
+      panelState.Caption = winName
+      ShowWindow .ParenthWnd, SW_HIDE
+
+      If Not bNeedReDocked Then
+        Set Item = m_tabManager.InsertItem(winName, , , vbaWin.Visible)
+        Item.ChildhWnd = .VbahWnd
+
+        If Item.Visible Then Item.Selected = True
+
+        ReDim Preserve m_DockedPanels(m_PanelCount)
+        m_DockedPanels(m_PanelCount) = panelState
+
+        m_PanelCount = m_PanelCount + 1&
+      Else
+        Item.Visible = True
+        Item.Selected = True
+        ShowWindow .VbahWnd, SW_SHOW
+        SetFocusApi .VbahWnd
+      End If
     End If
-    
+  End With
 End Sub
 
 Private Function GetMousePos(ByVal lParam As Long) As POINTAPI
@@ -571,43 +528,45 @@ Private Function GetMousePos(ByVal lParam As Long) As POINTAPI
 End Function
 
 Private Sub OnWindowPosChanging(ByVal hWnd As Long, ByVal lParam As Long)
-    'don't let VB reshow the old floating palette
-    Dim tWP As WINDOWPOS, i As Long
-    Dim winCaption As String
-    
-    If m_PanelCount > 0 Then
-        For i = 0 To m_PanelCount - 1
-            If m_DockedPanels(i).ParenthWnd = hWnd Then
-                CopyMemory tWP, ByVal lParam, Len(tWP)
-    
-                If (tWP.flags And SWP_SHOWWINDOW) = SWP_SHOWWINDOW Then
-                    tWP.flags = tWP.flags And Not SWP_SHOWWINDOW
-                    CopyMemory ByVal lParam, tWP, Len(tWP)
-                End If
+  'don't let VB reshow the old floating palette
+  Dim tWP        As WINDOWPOS, i As Long
+  Dim winCaption As String
 
-                Exit Sub
-            End If
-        Next
+  If Not m_bReactToWindowMsgs Then Exit Sub
+
+  If m_PanelCount > 0 Then
+    For i = 0 To m_PanelCount - 1
+      If m_DockedPanels(i).ParenthWnd = hWnd Then
+        CopyMemory tWP, ByVal lParam, Len(tWP)
+
+        If (tWP.flags And SWP_SHOWWINDOW) = SWP_SHOWWINDOW Then
+          tWP.flags = tWP.flags And Not SWP_SHOWWINDOW
+          CopyMemory ByVal lParam, tWP, Len(tWP)
+        End If
+
+        Exit Sub
+      End If
+    Next
+  End If
+
+  If GetWinText(hWnd, True) = VBA_WIN Then
+    If GetWinText(GetParent(hWnd), True) = "MDIClient" Then
+      'MDIMonitor takes care of that
+      Exit Sub
     End If
+    winCaption = GetWinText(hWnd)
 
-    If GetWinText(hWnd, True) = VBA_WIN Then
-        winCaption = GetWinText(hWnd)
+    Select Case winCaption
+      Case m_winImmediate, m_winLocals, m_winWatch
+        CopyMemory tWP, ByVal lParam, Len(tWP)
+        If (tWP.flags And SWP_SHOWWINDOW) = SWP_SHOWWINDOW Then
+          If m_hWnd <> hWnd Then
+            DockVBAWindow GetCHCore(m_lPtr), winCaption
 
-        Select Case winCaption
-
-            Case IMMED, WATCH, LOCALS
-                CopyMemory tWP, ByVal lParam, Len(tWP)
-                If (tWP.flags And SWP_SHOWWINDOW) = SWP_SHOWWINDOW Then
-        
-                    If m_hWnd <> hWnd Then
-                        DockVBAWindow GetCHCore(m_lPtr), winCaption
-        
-                        SetWindowPos m_hWnd, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or _
-                            SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED
-                    End If
-                End If
-
-        End Select
-    End If
-
+            SetWindowPos m_hWnd, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or _
+                SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED
+          End If
+        End If
+    End Select
+  End If
 End Sub

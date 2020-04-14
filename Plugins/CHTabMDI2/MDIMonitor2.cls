@@ -27,6 +27,7 @@ Private Const ID_CLOSE_BUT_ACTIVE As Long = 10
 
 Private Declare Function RedrawWindow Lib "user32.dll" (ByVal hWnd As Long, ByRef lprcUpdate As Any, ByVal hrgnUpdate As Long, ByVal fuRedraw As Long) As Long
 Private Declare Function TrackPopupMenu Lib "user32.dll" (ByVal hMenu As Long, ByVal wFlags As Long, ByVal x As Long, ByVal y As Long, ByVal nReserved As Long, ByVal hWnd As Long, ByRef lprc As Any) As Long
+'Private Declare Function SysAllocStringByteLen Lib "oleaut32.dll" (Optional ByVal pszStrPtr As Long, Optional ByVal Length As Long) As String
 
 Private Const HH_DISPLAY_TOPIC = &H0
 Private Declare Function HtmlHelp Lib "hhctrl.ocx" Alias "HtmlHelpA" (ByVal hwndCaller As Long, ByVal pszFile As String, ByVal uCommand As Long, ByVal dwData As Long) As Long
@@ -49,6 +50,10 @@ Attribute m_tabManager.VB_VarHelpID = -1
 Dim m_FromTabBar As Boolean
 Dim m_CtrlPressed As Boolean
 
+Private Function IsKeyPressed(ByVal key As Long) As Boolean
+  'If the most significant bit is set, the key is down
+  IsKeyPressed = CBool((GetAsyncKeyState(key) And &H8000) = &H8000)
+End Function
 Private Property Let ICHPlugin_CHCore(ByVal RHS As Long)
     'Save the Pointer for later use
     m_CHCorePtr = RHS
@@ -87,13 +92,13 @@ Private Property Get ICHPlugin_Name() As String
 End Property
 
 Private Sub ICHPlugin_OnConnection(ByVal ConnectMode As CodeHelpDef.ext_ConnectMode, custom() As Variant)
-    Dim CHCore As ICHCore
-    
-    Set CHCore = GetCHCore(m_CHCorePtr)
-    m_hWndMain = CHCore.VBE.MainWindow.hWnd
-    Call StartMonitor(ConnectMode = ext_cm_AfterStartup)
-    
-    Set CHCore = Nothing
+  Dim CHCore As ICHCore
+  
+  Set CHCore = GetCHCore(m_CHCorePtr)
+  m_hWndMain = CHCore.VBE.MainWindow.hWnd
+  Call StartMonitor(ConnectMode = ext_cm_AfterStartup)
+  
+  Set CHCore = Nothing
 End Sub
 
 Private Sub ICHPlugin_OnDisconnect(ByVal RemoveMode As CodeHelpDef.ext_DisconnectMode, custom() As Variant)
@@ -102,103 +107,118 @@ End Sub
 
 ' This is where we ctrl-switch tabs
 Private Sub ICHPlugin_OnKeyHook(bHandled As Boolean, lReturn As Long, wParam As Long, lParam As Long)
-    ' Call into VBWinApi to get the control key state
-    CtrlDown = GetAsyncKeyState(vbKeyControl)
-    
-    If m_CtrlPressed Then
-        Select Case wParam
-            Case vbKey0 To vbKey9
-                Call m_tabManager.ShortcutActivate(wParam)
-            
-            Case vbKeyReturn
-                Call MaximizeCodePane
-                
-        End Select
-    End If
+  'don't activate for alt-gr key on some european layouts
+  CtrlDown = IsKeyPressed(vbKeyControl) And Not IsKeyPressed(vbKeyMenu)
+
+  If m_CtrlPressed Then
+    Select Case wParam
+      Case vbKey0 To vbKey9
+        Call m_tabManager.ShortcutActivate(wParam)
+
+      Case vbKeyReturn
+        Call MaximizeCodePane
+
+    End Select
+  End If
 End Sub
 
-Private Sub ICHPlugin_OnWinProcHook(ByVal hWnd As Long, ByVal uMsg As Long, ByVal wParam As Long, ByVal lParam As Long, _
-                                    bHandled As Boolean, placeSubclass As Boolean, before As Boolean)
-    On Error GoTo ERR_HANDLER
+Private Sub ICHPlugin_OnWinProcHook(ByVal hWnd As Long, _
+                                    ByVal uMsg As Long, _
+                                    ByVal wParam As Long, _
+                                    ByVal lParam As Long, _
+                                    bHandled As Boolean, _
+                                    placeSubclass As Boolean, _
+                                    before As Boolean)
+  On Error GoTo ERR_HANDLER
+
+  Dim tPt     As POINTAPI
+  Dim Button  As MouseButtonConstants
+  
+  Select Case uMsg
+
+    Case WM_SHOWWINDOW
+      Call OnShowWindow(hWnd, wParam)
+
+    Case WM_SETTEXT
+'      OnTextChanged hWnd, lParam
+      If GetParent(hWnd) <> m_hMDIClient Then Exit Sub
+      FindItem(hWnd).Caption = GetCaption(StrConv(SysAllocStringByteLen(lParam, A_lstrlenPtr(lParam)), vbUnicode))
+
+    Case WM_PARENTNOTIFY
+      If hWnd <> m_hMDIClient Then Exit Sub
+      Select Case LowWord(wParam)
+        Case WM_CREATE
+          AddNewWindow lParam
+        Case WM_DESTROY
+          If m_FromTabBar Then Exit Sub
+          m_tabManager.RemoveItem FindItem(lParam), False
+      End Select
+        
+    Case WM_NCPAINT
+      If hWnd <> m_hMDIClient Then Exit Sub
+      Call m_tabManager.RequestRedraw
+        
+    Case WM_NCCALCSIZE, WM_NCHITTEST
+      If hWnd <> m_hMDIClient Then Exit Sub
+      'need to subclass to modify the return value
+      placeSubclass = True
+      before = False
     
-    Dim tPt As POINTAPI
-    Dim Button As MouseButtonConstants
+    Case WM_SIZE
+      If hWnd <> m_hMDIClient Then Exit Sub
+      Call MoveTabStrip
     
-    Select Case uMsg
-            
-        Case WM_SHOWWINDOW
-            Call OnShowWindow(hWnd, wParam)
-            
-        Case WM_SETTEXT
-            Call OnTextChanged(hWnd, lParam)
-            
-        Case WM_PARENTNOTIFY
-            Call OnParentNotify(hWnd, wParam, lParam)
-            
-        Case WM_NCPAINT
-            If hWnd <> m_hMDIClient Then Exit Sub
-            Call m_tabManager.RequestRedraw
-            
-        Case WM_NCCALCSIZE, WM_NCHITTEST
-            If hWnd <> m_hMDIClient Then Exit Sub
-            'need to subclass to modify the return value
-            placeSubclass = True
-            before = False
-        
-        Case WM_SIZE
-            If hWnd <> m_hMDIClient Then Exit Sub
-            Call MoveTabStrip
-        
-        Case WM_NCLBUTTONDOWN, WM_NCRBUTTONDOWN, WM_NCMOUSEMOVE, _
-            WM_NCLBUTTONUP, WM_NCRBUTTONUP, WM_NCLBUTTONDBLCLK
-            
-            If hWnd <> m_hMDIClient Then Exit Sub
-            tPt = GetMousePos(lParam)
-            
-            Select Case uMsg
+    Case WM_NCLBUTTONDOWN, WM_NCRBUTTONDOWN, WM_NCMOUSEMOVE, _
+      WM_NCLBUTTONUP, WM_NCRBUTTONUP, WM_NCLBUTTONDBLCLK, WM_NCMBUTTONUP
 
-                Case WM_NCLBUTTONDOWN
-                    Call m_tabManager.OnLMouseDown(tPt.x, tPt.y)
-                
-                Case WM_NCMOUSEMOVE
-                    If GetAsyncKeyState(VK_LBUTTON) Then
-                        Button = vbLeftButton
-                    End If
+      If hWnd <> m_hMDIClient Then Exit Sub
+      tPt = GetMousePos(lParam)
 
-                    Call m_tabManager.OnMouseMove(Button, tPt.x, tPt.y)
+      Select Case uMsg
+        Case WM_NCLBUTTONDOWN
+          Call m_tabManager.OnLMouseDown(tPt.x, tPt.y)
 
-                Case WM_NCLBUTTONUP
-                    Call m_tabManager.OnMouseUp(vbLeftButton, tPt.x, tPt.y)
-                    
-                Case WM_NCRBUTTONUP
-                    Call m_tabManager.OnMouseUp(vbRightButton, tPt.x, tPt.y)
-                    
-                Case WM_NCLBUTTONDBLCLK 'treat double click as one click
-                    Call m_tabManager.OnLMouseDown(tPt.x, tPt.y)
-                    Call m_tabManager.OnMouseUp(vbLeftButton, tPt.x, tPt.y)
-                    
-            End Select
-            
-        Case WM_MOUSEMOVE
-            Call m_tabManager.OnMouseLeave
-        
-        Case WM_CHILDACTIVATE
-            If GetParent(hWnd) = m_hMDIClient Then
-                FindItem(hWnd).Selected = True
+          Case WM_NCMOUSEMOVE
+            If GetAsyncKeyState(VK_LBUTTON) Then
+              Button = vbLeftButton
             End If
-            
-        Case WM_ACTIVATE
-            If hWnd = m_hWndMain Then
-                If LowWord(wParam) = WA_ACTIVE Then
-                    placeSubclass = True
-                End If
-            End If
-    End Select
-    
-    Exit Sub
+            Call m_tabManager.OnMouseMove(Button, tPt.x, tPt.y)
+
+          Case WM_NCLBUTTONUP
+            Call m_tabManager.OnMouseUp(vbLeftButton, tPt.x, tPt.y)
+
+          Case WM_NCRBUTTONUP
+            Call m_tabManager.OnMouseUp(vbRightButton, tPt.x, tPt.y)
+
+          Case WM_NCMBUTTONUP
+            m_tabManager.OnMouseUp vbMiddleButton, tPt.x, tPt.y
+
+          Case WM_NCLBUTTONDBLCLK 'treat double click as one click
+            Call m_tabManager.OnLMouseDown(tPt.x, tPt.y)
+            Call m_tabManager.OnMouseUp(vbLeftButton, tPt.x, tPt.y)
+        End Select
+
+    Case WM_MOUSEMOVE
+      Call m_tabManager.OnMouseLeave
+
+    Case WM_CHILDACTIVATE
+      If GetParent(hWnd) = m_hMDIClient Then
+        FindItem(hWnd).Selected = True
+      End If
+
+    Case WM_ACTIVATE
+      If hWnd = m_hWndMain Then
+        If LowWord(wParam) = WA_ACTIVE Then
+          placeSubclass = True
+        End If
+      End If
+  End Select
+  
+  Exit Sub
+
 ERR_HANDLER:
-    Call m_tabManager.LockUpdateRequest(False, True)
-    'LogToNotePad Err.Description & " " & Erl
+  Call m_tabManager.LockUpdateRequest(False, True)
+  'LogToNotePad Err.Description & " " & Erl
 End Sub
 
 Private Sub ICHPlugin_OnWinProc(ByVal hWnd As Long, ByVal uMsg As Long, wParam As Long, lParam As Long, _
@@ -237,24 +257,23 @@ Private Property Get ICHPlugin_Version() As String
 End Property
 
 Private Sub StartMonitor(ByVal AfterStartUp As Boolean)
-    Call EndMonitor
-        
-    m_hMDIClient = A_FindWindowEx(m_hWndMain, 0, "MDIClient", vbNullString)
+  Call EndMonitor
 
-    If m_hMDIClient = 0 Then Exit Sub
-  
-    Set m_tabManager = New TabManager
-    
-    If AfterStartUp Then
-        Call RegisterExistingWindows
-    End If
-    
-    Call SetWindowPos(m_hMDIClient, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED)
-    'update client window in case child is not in maximized state
-    Call RedrawWindow(m_hMDIClient, ByVal 0, ByVal 0, RDW_INVALIDATE Or RDW_UPDATENOW Or RDW_ERASE)
-    
-    Call CreatePopup
-    Call LoadSetting
+  m_hMDIClient = A_FindWindowEx(m_hWndMain, 0, "MDIClient", vbNullString)
+  If m_hMDIClient = 0 Then Exit Sub
+
+  Set m_tabManager = New TabManager
+
+  If AfterStartUp Then
+    Call RegisterExistingWindows
+  End If
+
+  Call SetWindowPos(m_hMDIClient, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED)
+  'update client window in case child is not in maximized state
+  Call RedrawWindow(m_hMDIClient, ByVal 0, ByVal 0, RDW_INVALIDATE Or RDW_UPDATENOW Or RDW_ERASE)
+
+  Call CreatePopup
+  Call LoadSetting
 End Sub
 
 Private Sub EndMonitor()
@@ -308,10 +327,10 @@ Private Sub RegisterExistingWindows()
 End Sub
 
 Private Sub AddNewWindow(ByVal hWnd As Long)
-    Dim oTabItem As TabItem
-    
-    Set oTabItem = m_tabManager.InsertItem(Caption:=GetCaption(GetWinText(hWnd, False)), Visible:=IsWindowVisible(hWnd))
-    oTabItem.ChildhWnd = hWnd
+  Dim oTabItem As TabItem
+  
+  Set oTabItem = m_tabManager.InsertItem(Caption:=GetCaption(GetWinText(hWnd, False)), Visible:=IsWindowVisible(hWnd))
+  oTabItem.ChildhWnd = hWnd
 End Sub
 
 Private Function GetCaption(ByVal Text As String) As String
@@ -360,51 +379,50 @@ Private Sub m_tabManager_ItemClick(ByVal oTabItem As TabItem)
 End Sub
 
 Private Sub m_tabManager_ItemClosing(ByVal oTabItem As TabItem, ByVal FromButton As Boolean, Cancel As Boolean)
-
-    If FromButton Then m_FromTabBar = True
-    If m_FromTabBar Then
-        Call A_SendMessage(CLng(oTabItem.ChildhWnd), WM_SYSCOMMAND, SC_CLOSE, ByVal 0)
-    End If
-
-    If FromButton Then m_FromTabBar = False
+  If FromButton Then m_FromTabBar = True
+  If m_FromTabBar Then
+    Call A_SendMessage(CLng(oTabItem.ChildhWnd), WM_SYSCOMMAND, SC_CLOSE, 0&)
+  End If
+  If FromButton Then m_FromTabBar = False
 End Sub
 
 Private Sub m_tabManager_MouseUp(ByVal Button As MouseButtonConstants, ByVal oTabItem As TabItem)
-    Dim menuItemID As Long
-    Dim itemhWnd As Long
+  Dim menuItemID As Long
+  Dim itemhWnd As Long
+  
+  If Button = vbRightButton Then
+      menuItemID = ShowPopup(oTabItem)
+
+      If menuItemID = 0 Then Exit Sub
+
+      Select Case menuItemID
+        Case ID_CLOSE
+          itemhWnd = CLng(oTabItem.ChildhWnd)
+          Call A_SendMessage(itemhWnd, WM_SYSCOMMAND, SC_CLOSE, ByVal 0)
+
+        Case ID_CLOSE_ALL, ID_CLOSE_BUT_ACTIVE
+          m_FromTabBar = True
+
+          If menuItemID = ID_CLOSE_ALL Then
+            m_tabManager.RemoveAll True
+          Else
+            m_tabManager.RemoveAllButActive True
+          End If
+
+          m_FromTabBar = False
+          Call SetWindowPos(m_hMDIClient, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED)
+
+        Case CloseButtonHidden, CloseButtonRightMost, CloseButtonOnActive
+          m_ShowCloseButton = menuItemID
+          m_tabManager.PaintManager.ShowCloseButton = menuItemID
+          Call UpdateMenu(menuItemID)
+      End Select
+
+  ElseIf Button = vbMiddleButton Then
     
-    If Button = vbRightButton Then
-        menuItemID = ShowPopup(oTabItem)
-
-        If menuItemID = 0 Then Exit Sub
-        
-        Select Case menuItemID
-
-            Case ID_CLOSE
-                itemhWnd = CLng(oTabItem.ChildhWnd)
-                Call A_SendMessage(itemhWnd, WM_SYSCOMMAND, SC_CLOSE, ByVal 0)
-                
-            Case ID_CLOSE_ALL, ID_CLOSE_BUT_ACTIVE
-                m_FromTabBar = True
-
-                If menuItemID = ID_CLOSE_ALL Then
-                    m_tabManager.RemoveAll True
-                Else
-                    m_tabManager.RemoveAllButActive True
-                End If
-
-                m_FromTabBar = False
-                Call SetWindowPos(m_hMDIClient, 0, 0, 0, 0, 0, SWP_NOSIZE Or SWP_NOMOVE Or SWP_NOZORDER Or SWP_NOACTIVATE Or SWP_FRAMECHANGED)
-                            
-            Case CloseButtonHidden, CloseButtonRightMost, CloseButtonOnActive
-                m_ShowCloseButton = menuItemID
-                m_tabManager.PaintManager.ShowCloseButton = menuItemID
-                
-                Call UpdateMenu(menuItemID)
-                
-        End Select
-    
-    End If
+    itemhWnd = CLng(oTabItem.ChildhWnd)
+    A_SendMessage itemhWnd, WM_SYSCOMMAND, SC_CLOSE, 0&
+  End If
 
 End Sub
 
@@ -428,60 +446,58 @@ Private Sub MoveTabStrip()
 End Sub
 
 Private Sub CreatePopup()
-    
-    m_hMenu = CreatePopupMenu()
-    m_hSubMenu = CreatePopupMenu()
-    Call A_AppendMenuStr(m_hMenu, MF_STRING, ID_CLOSE, "Close")
-    Call A_AppendMenuStr(m_hMenu, MF_STRING, ID_CLOSE_ALL, "Close All")
-    Call A_AppendMenuStr(m_hMenu, MF_STRING, ID_CLOSE_BUT_ACTIVE, "Close All But Active")
-    Call A_AppendMenu(m_hMenu, MF_SEPARATOR, 0, ByVal 0)
-    Call A_AppendMenuStr(m_hMenu, MF_POPUP, m_hSubMenu, "Close Button")
-    
-    Call A_AppendMenuStr(m_hSubMenu, MF_STRING, CloseButtonHidden, "Hidden")
-    Call A_AppendMenuStr(m_hSubMenu, MF_STRING, CloseButtonRightMost, "Rightmost")
-    Call A_AppendMenuStr(m_hSubMenu, MF_STRING, CloseButtonOnActive, "On Active Tab")
+  m_hMenu = CreatePopupMenu()
+  m_hSubMenu = CreatePopupMenu()
+  Call A_AppendMenuStr(m_hMenu, MF_STRING, ID_CLOSE, "Close")
+  Call A_AppendMenuStr(m_hMenu, MF_STRING, ID_CLOSE_ALL, "Close All")
+  Call A_AppendMenuStr(m_hMenu, MF_STRING, ID_CLOSE_BUT_ACTIVE, "Close All But Active")
+  Call A_AppendMenu(m_hMenu, MF_SEPARATOR, 0, 0)
+  Call A_AppendMenuStr(m_hMenu, MF_POPUP, m_hSubMenu, "Close Button")
+
+  Call A_AppendMenuStr(m_hSubMenu, MF_STRING, CloseButtonHidden, "Hidden")
+  Call A_AppendMenuStr(m_hSubMenu, MF_STRING, CloseButtonRightMost, "Rightmost")
+  Call A_AppendMenuStr(m_hSubMenu, MF_STRING, CloseButtonOnActive, "On Active Tab")
 End Sub
 
 Private Function ShowPopup(ByVal oTabItem As TabItem) As Long
-    Dim tPt As POINTAPI
-  
-    If m_tabManager.Items.Count > 1 Then
-        Call EnableMenuItem(m_hMenu, ID_CLOSE_ALL, MF_ENABLED)
-        Call EnableMenuItem(m_hMenu, ID_CLOSE_BUT_ACTIVE, MF_ENABLED)
-    Else
-        Call EnableMenuItem(m_hMenu, ID_CLOSE_ALL, MF_GRAYED)
-        Call EnableMenuItem(m_hMenu, ID_CLOSE_BUT_ACTIVE, MF_GRAYED)
-    End If
-    
-    If Not oTabItem Is Nothing Then
-        Call EnableMenuItem(m_hMenu, ID_CLOSE, MF_ENABLED)
-    Else
-        Call EnableMenuItem(m_hMenu, ID_CLOSE, MF_GRAYED)
-    End If
-    
-    Call GetCursorPos(tPt)
-    ShowPopup = TrackPopupMenu(m_hMenu, TPM_RETURNCMD Or TPM_NONOTIFY, tPt.x, tPt.y, ByVal 0, m_hWndMain, ByVal 0)
-    
+  Dim tPt As POINTAPI
+
+  If m_tabManager.Items.Count > 1 Then
+    Call EnableMenuItem(m_hMenu, ID_CLOSE_ALL, MF_ENABLED)
+    Call EnableMenuItem(m_hMenu, ID_CLOSE_BUT_ACTIVE, MF_ENABLED)
+  Else
+    Call EnableMenuItem(m_hMenu, ID_CLOSE_ALL, MF_GRAYED)
+    Call EnableMenuItem(m_hMenu, ID_CLOSE_BUT_ACTIVE, MF_GRAYED)
+  End If
+
+  If Not oTabItem Is Nothing Then
+    Call EnableMenuItem(m_hMenu, ID_CLOSE, MF_ENABLED)
+  Else
+    Call EnableMenuItem(m_hMenu, ID_CLOSE, MF_GRAYED)
+  End If
+
+  Call GetCursorPos(tPt)
+  ShowPopup = TrackPopupMenu(m_hMenu, TPM_RETURNCMD Or TPM_NONOTIFY, tPt.x, tPt.y, ByVal 0, m_hWndMain, ByVal 0)
 End Function
 
 Private Sub LoadSetting()
-    On Error Resume Next
-    m_ShowCloseButton = CLng(GetSetting("CodeHelp", ICHPlugin_Name, "CloseButton", CloseButtonOnActive))
-    m_tabManager.PaintManager.ShowCloseButton = m_ShowCloseButton
-    Call UpdateMenu(m_tabManager.PaintManager.ShowCloseButton)
+  On Error Resume Next
+  m_ShowCloseButton = CLng(GetSetting("CodeHelp", ICHPlugin_Name, "CloseButton", CloseButtonOnActive))
+  m_tabManager.PaintManager.ShowCloseButton = m_ShowCloseButton
+  Call UpdateMenu(m_tabManager.PaintManager.ShowCloseButton)
 End Sub
 
 Private Sub UpdateMenu(ByVal menuID As Long)
-    Dim idx As Long
-    
-    For idx = 0 To 2
-        If menuID = 2 ^ idx Then
-            Call CheckMenuItem(m_hSubMenu, menuID, MF_BYCOMMAND Or MF_CHECKED)
-        Else
-            Call CheckMenuItem(m_hSubMenu, menuID, MF_BYCOMMAND Or MF_UNCHECKED)
-        End If
-    Next
+  Dim idx As Long, lMenu As Long
 
+  For idx = 0 To 2
+    lMenu = 2 ^ idx
+    If menuID = lMenu Then
+      Call CheckMenuItem(m_hSubMenu, lMenu, MF_BYCOMMAND Or MF_CHECKED)
+    Else
+      Call CheckMenuItem(m_hSubMenu, lMenu, MF_BYCOMMAND Or MF_UNCHECKED)
+    End If
+  Next
 End Sub
 
 'Message processing
@@ -506,23 +522,23 @@ Private Sub OnShowWindow(ByVal hWnd As Long, ByVal wParam As Long)
 End Sub
 
 Private Sub OnTextChanged(ByVal hWnd As Long, ByVal lParam As Long)
-    Dim idx As Long
-    Dim sText As String
-    
-    If GetParent(hWnd) <> m_hMDIClient Then Exit Sub
-    
-    sText = String$(128, vbNullChar)
-    
-    ' copy the stringPtr contents into a string of our own
-    Call A_lstrcpyPtrStr(sText, ByVal lParam)
-    
-    ' figure out where it ends
-    idx = InStr(1, sText, vbNullChar) - 1&
-    If idx > 0 Then
-        sText = Left$(sText, idx)
-    End If
-    
-    FindItem(hWnd).Caption = GetCaption(sText)
+  Dim idx   As Long
+  Dim sText As String
+
+  If GetParent(hWnd) <> m_hMDIClient Then Exit Sub
+
+'  sText = String$(128, vbNullChar)
+  SysReAllocStringLen sText, 0, A_lstrlenPtr(lParam)
+
+  ' copy the stringPtr contents into a string of our own
+  Call A_lstrcpyPtrStr(sText, ByVal lParam)
+
+  ' figure out where it ends
+  idx = InStr(1, sText, vbNullChar) - 1&
+  If idx > 0 Then
+    sText = Left$(sText, idx)
+  End If
+  FindItem(hWnd).Caption = GetCaption(sText)
 End Sub
 
 Private Sub OnParentNotify(ByVal hWnd As Long, ByVal wParam As Long, ByVal lParam As Long)

@@ -8,16 +8,8 @@ Begin VB.UserDocument DockWindow
    HScrollSmallChange=   225
    ScaleHeight     =   1395
    ScaleWidth      =   4410
-   ScrollBars      =   0  'None
+   ScrollBars      =   0  'Kein
    VScrollSmallChange=   225
-   Begin VB.Label Label1 
-      Caption         =   "Anyone interested in developing a task list viewer here?"
-      Height          =   330
-      Left            =   135
-      TabIndex        =   0
-      Top             =   405
-      Width           =   4020
-   End
 End
 Attribute VB_Name = "DockWindow"
 Attribute VB_GlobalNameSpace = False

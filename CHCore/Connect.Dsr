@@ -1,16 +1,16 @@
 VERSION 5.00
 Begin {AC0714F6-3D04-11D1-AE7D-00A0C90F26F4} Connect 
-   ClientHeight    =   12765
+   ClientHeight    =   9225
    ClientLeft      =   1740
    ClientTop       =   1545
-   ClientWidth     =   18000
-   _ExtentX        =   31750
-   _ExtentY        =   22516
+   ClientWidth     =   17340
+   _ExtentX        =   30586
+   _ExtentY        =   16272
    _Version        =   393216
    Description     =   "CodeHelp Core IDE Extender Framework"
    DisplayName     =   "CodeHelp IDE Extender"
    AppName         =   "Visual Basic"
-   AppVer          =   "Visual Basic 98 (ver 6.0)"
+   AppVer          =   "Visual Basic 6.0"
    LoadName        =   "Command Line / Startup"
    LoadBehavior    =   5
    RegLocation     =   "HKEY_CURRENT_USER\Software\Microsoft\Visual Basic\6.0"
@@ -177,59 +177,59 @@ Private Sub EndMonitor()
 End Sub
 
 Private Sub LoadPlugins(ByVal ConnectMode As AddInDesignerObjects.ext_ConnectMode, custom() As Variant)
-    Dim sPath As String
-    Dim sFile As String
-    
-    Set mCHCore.Plugins = New Plugins
-    sPath = App.Path & "\Plugins\"
-    sFile = Dir(sPath & "*.dll")
-    Do While Len(sFile) > 0
-        sFile = sPath & sFile
-        Call LoadPluginDLL(sFile, ConnectMode, custom)
-        sFile = Dir()
-    Loop
+  Dim sPath As String
+  Dim sFile As String
+
+  Set mCHCore.Plugins = New Plugins
+  sPath = App.Path & "\Plugins\"
+  sFile = Dir$(sPath & "*.dll")
+  Do While LenB(sFile)
+    sFile = sPath & sFile
+    Call LoadPluginDLL(sFile, ConnectMode, custom)
+    sFile = Dir()
+  Loop
 End Sub
 
 Private Sub LoadPluginDLL(ByVal fileName As String, ByVal ConnectMode As ext_ConnectMode, custom() As Variant)
-    'ICHPlugin Guid**************************************************************
-    'This is defined in CHLib.tlb
-    'All plugins must inplements this interface to be succesfully load by CHCore
-    Const GUID_ID = "{0412CF22-0411-4255-9EE1-57354438E4EB}"
-    '****************************************************************************
-    Dim tliApp As TLIApplication
-    Dim tliInfo As TypeLibInfo
-    Dim ccI As CoClassInfo
-    Dim inf As InterfaceInfo
-    
-    Dim oPlugin As ICHPlugin
-    Dim className As String
-    
-    On Error Resume Next
-    gPtr = ObjPtr(Me)
-    
-    Set tliApp = New TLIApplication
-    Set tliInfo = tliApp.TypeLibInfoFromFile(fileName)
-        
-    For Each ccI In tliInfo.CoClasses
-        For Each inf In ccI.Interfaces
-            'more than one class in the dll can implement ICHPlugin
-            If inf.Guid = GUID_ID Then
-                'this class implements ICHPlugin
-                className = tliInfo.Name & "." & ccI.Name
-                Set oPlugin = CreateObject(className)
-                
-                If Not oPlugin Is Nothing Then
-                    oPlugin.CHCore = gPtr
-                    oPlugin.Enabled = CBool(GetSetting("CodeHelp", oPlugin.Name, "Enabled", True))
-                    Call mCHCore.Plugins.Add(oPlugin)
-                    
-                    Set oPlugin = Nothing
-                End If
-                
-                Exit For
-            End If
-        Next
+  'ICHPlugin Guid**************************************************************
+  'This is defined in CHLib.tlb
+  'All plugins must inplements this interface to be succesfully load by CHCore
+  Const GUID_ID = "{0412CF22-0411-4255-9EE1-57354438E4EB}"
+  '****************************************************************************
+  Dim tliApp As TLIApplication
+  Dim tliInfo As TypeLibInfo
+  Dim ccI As CoClassInfo
+  Dim inf As InterfaceInfo
+
+  Dim oPlugin As ICHPlugin
+  Dim className As String
+
+  On Error Resume Next
+  gPtr = ObjPtr(Me)
+
+  Set tliApp = New TLIApplication
+  Set tliInfo = tliApp.TypeLibInfoFromFile(fileName)
+
+  For Each ccI In tliInfo.CoClasses
+    For Each inf In ccI.Interfaces
+      'more than one class in the dll can implement ICHPlugin
+      If inf.Guid = GUID_ID Then
+        'this class implements ICHPlugin
+        className = tliInfo.Name & "." & ccI.Name
+        Set oPlugin = CreateObject(className)
+
+        If Not oPlugin Is Nothing Then
+          oPlugin.CHCore = gPtr
+          oPlugin.Enabled = CBool(GetSetting("CodeHelp", oPlugin.Name, "Enabled", True))
+          Call mCHCore.Plugins.Add(oPlugin)
+
+'          Set oPlugin = Nothing
+        End If
+
+        Exit For
+      End If
     Next
+  Next
     
 End Sub
 

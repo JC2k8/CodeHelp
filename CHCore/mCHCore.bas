@@ -6,9 +6,6 @@ Public Declare Function GetProcAddress Lib "kernel32.dll" (ByVal hModule As Long
 'Public vars
 Public HookMon As HookMonitor
 
-'For crash prevention on Win98
-Public lockSubclass As cSubclass
-
 'for passing to manual oPlugin connect/disconnect, not used but need to be pass along
 Public customVar() As Variant
 

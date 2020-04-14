@@ -17,9 +17,9 @@ Private Const LEFT_NAV = 1
 Private Const RIGHT_NAV = 2
 
 Public Enum CloseButtonPosition
-    CloseButtonHidden = 1
-    CloseButtonRightMost = 2
-    CloseButtonOnActive = 4
+  CloseButtonHidden = 1
+  CloseButtonRightMost = 2
+  CloseButtonOnActive = 4
 End Enum
 
 Private m_oTheme As ITabPainter
@@ -55,27 +55,26 @@ Public Property Set TabTheme(ByVal objTabTheme As ITabPainter)
 End Property
 
 Public Property Let ShowCloseButton(ByVal eShowCloseButton As CloseButtonPosition)
-    If m_eShowCloseButton <> eShowCloseButton Then
-        m_eShowCloseButton = eShowCloseButton
-        
-        m_Buttons(0).Visible = (m_eShowCloseButton <> CloseButtonHidden)
-        m_oOwner.RecalculateLayout
-        
-        If Not m_oOwner.SelectedItem Is Nothing Then
-            m_oOwner.CaptionChanged m_oOwner.SelectedItem.Index
-        End If
-        m_oOwner.RequestRedraw
+  If m_eShowCloseButton <> eShowCloseButton Then
+    m_eShowCloseButton = eShowCloseButton
 
+    m_Buttons(0).Visible = (m_eShowCloseButton <> CloseButtonHidden)
+    m_oOwner.RecalculateLayout
+
+    If Not m_oOwner.SelectedItem Is Nothing Then
+      m_oOwner.CaptionChanged m_oOwner.SelectedItem.Index
     End If
+    m_oOwner.RequestRedraw
+  End If
 End Property
 
 Public Property Get ShowCloseButton() As CloseButtonPosition
     ShowCloseButton = m_eShowCloseButton
 End Property
 
-Friend Function GetTabWidth(ByVal item As TabItem) As Long
-    GetTabWidth = m_oTheme.CalculateTabWidth(item, oDC)
-    If item.Selected And m_eShowCloseButton = CloseButtonOnActive Then
+Friend Function GetTabWidth(ByVal Item As TabItem) As Long
+    GetTabWidth = m_oTheme.CalculateTabWidth(Item, oDC)
+    If Item.Selected And m_eShowCloseButton = CloseButtonOnActive Then
         GetTabWidth = GetTabWidth + 16&
     End If
 End Function
@@ -110,23 +109,23 @@ Friend Property Set Owner(objOwner As TabManager)
     m_Buttons(RIGHT_NAV).Caption = "4"
 End Property
 
-Friend Sub DrawItem(ByVal oDC As MemoryDC, bounds As RECT, ByVal item As TabItem, ByVal itemType As TabItemType)
+Friend Sub DrawItem(ByVal oDC As MemoryDC, bounds As RECT, ByVal Item As TabItem, ByVal itemType As TabItemType)
     Dim tR As RECT
     'pass a copy of the struct since we can not pass byval and the client may wish to modify the bounds
     LSet tR = bounds
     
-    If Not item Is Nothing Then
-        If item.RightMostItem Then
+    If Not Item Is Nothing Then
+        If Item.RightMostItem Then
             
             ExcludeClipRect oDC.hdc, GetMaxWidth(oDC.Width), 0, oDC.Width, oDC.Height
             
         End If
     End If
-    m_oTheme.DrawItem oDC, tR, item, itemType
+    m_oTheme.DrawItem oDC, tR, Item, itemType
     
     If itemType = DrawTabItem Then
         If m_eShowCloseButton = CloseButtonOnActive Then
-            If item.Selected Then
+            If Item.Selected Then
                 tR.Left = bounds.Right - 18&
                 tR.Right = tR.Left + 14&
                 tR.Top = bounds.Top + 5&
@@ -136,7 +135,7 @@ Friend Sub DrawItem(ByVal oDC As MemoryDC, bounds As RECT, ByVal item As TabItem
             End If
         End If
     
-    ElseIf itemType = DrawBackGround Then
+    ElseIf itemType = DrawBackground Then
         If m_eShowCloseButton = CloseButtonRightMost Then
             tR.Left = bounds.Right - 16&
             tR.Right = tR.Left + 14&
@@ -170,24 +169,24 @@ Friend Sub DrawItem(ByVal oDC As MemoryDC, bounds As RECT, ByVal item As TabItem
     End If
 End Sub
 
-Friend Sub DrawShortcut(ByVal oDC As MemoryDC, bounds As RECT, ByVal item As TabItem, ByVal visibleIndex As Long)
-    m_oTheme.DrawShortcut oDC, bounds, item, visibleIndex
+Friend Sub DrawShortcut(ByVal oDC As MemoryDC, bounds As RECT, ByVal Item As TabItem, ByVal visibleIndex As Long)
+    m_oTheme.DrawShortcut oDC, bounds, Item, visibleIndex
 End Sub
 
 Friend Function ButtonHittest(ByVal x As Long, ByVal y As Long) As TabItem
-    Dim i As Long, item As TabItem
+    Dim i As Long, Item As TabItem
     Dim tR As RECT
     'iterate only in visible boundary
     tR.Top = m_oOwner.Top + 3
     tR.Bottom = m_oOwner.Top + 19
     
     For i = 0 To 2
-        Set item = m_Buttons(i)
-        If item.Visible Then
-            tR.Left = m_oOwner.Left + item.Width 'use width property as left coord
+        Set Item = m_Buttons(i)
+        If Item.Visible Then
+            tR.Left = m_oOwner.Left + Item.Width 'use width property as left coord
             tR.Right = tR.Left + 14&
             If PtInRect(tR, x, y) Then
-                Set ButtonHittest = item
+                Set ButtonHittest = Item
                 Exit For
             End If
         End If

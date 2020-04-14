@@ -22,9 +22,9 @@ Event RequestRedraw(ByRef hdc As Long)
 Event DrawFinished(ByVal hdc As Long)
 
 Event ItemChanging(ByVal toItem As TabItem, ByRef Cancel As Boolean)
-Event ItemClick(ByVal item As TabItem)
-Event MouseUp(ByVal Button As MouseButtonConstants, ByVal item As TabItem)
-Event ItemClosing(ByVal item As TabItem, ByVal FromButton As Boolean, ByRef Cancel As Boolean)
+Event ItemClick(ByVal Item As TabItem)
+Event MouseUp(ByVal Button As MouseButtonConstants, ByVal Item As TabItem)
+Event ItemClosing(ByVal Item As TabItem, ByVal FromButton As Boolean, ByRef Cancel As Boolean)
 
 Private m_lFirstItem As Long
 Private m_lLastItem As Long
@@ -272,8 +272,8 @@ Friend Sub RecalculateLayout(Optional Redraw As Boolean = False)
     If Redraw Then Call RequestRedraw
 End Sub
 
-Private Function GetTabWidth(ByVal item As TabItem) As Long
-    GetTabWidth = m_oPaintMgr.GetTabWidth(item)
+Private Function GetTabWidth(ByVal Item As TabItem) As Long
+    GetTabWidth = m_oPaintMgr.GetTabWidth(Item)
 End Function
 
 Public Property Set SelectedItem(ByVal Value As TabItem)
@@ -345,7 +345,7 @@ End Sub
 
 Private Sub EnsureVisible(ByVal Index As Long)
     Dim lIdx As Long
-    Dim item As TabItem
+    Dim Item As TabItem
     Dim tR As RECT
     Dim maxWidth As Long
     
@@ -368,10 +368,10 @@ Private Sub EnsureVisible(ByVal Index As Long)
             tR.Right = maxWidth
 
             For lIdx = Index To 1 Step -1
-                Set item = m_Items("#" & lIdx)
+                Set Item = m_Items("#" & lIdx)
 
-                If item.Visible Then
-                    tR.Left = tR.Right - item.Width
+                If Item.Visible Then
+                    tR.Left = tR.Right - Item.Width
 
                     If tR.Left <= 0 Then
                         m_lFirstItem = lIdx
@@ -410,12 +410,12 @@ Friend Function IsOffScreenToTheRight(ByVal Index As Long, ByVal maxWidth As Lon
 End Function
 
 Friend Sub CaptionChanged(ByVal Index As Long)
-    Dim item As TabItem
+    Dim Item As TabItem
     
-    Set item = m_Items("#" & Index)
-    item.Width = GetTabWidth(item)
+    Set Item = m_Items("#" & Index)
+    Item.Width = GetTabWidth(Item)
 
-    If item.Visible Then
+    If Item.Visible Then
         If Index >= m_lFirstItem Then
             If IsOffScreenToTheRight(Index, m_oPaintMgr.GetMaxWidth(m_lWidth)) = False Then
                 Call RecalculateLayout(True)
@@ -437,7 +437,7 @@ End Sub
 
 Private Sub DrawTabs(ByVal hdc As Long)
     Dim lIdx As Long
-    Dim item As TabItem
+    Dim Item As TabItem
     Dim tR As RECT
     Dim maxSpace As Long
     Dim lCount As Long
@@ -470,27 +470,26 @@ Private Sub DrawTabs(ByVal hdc As Long)
         lCount = VisibleTabCount
 
         For lIdx = m_lFirstItem To m_Items.Count
-            Set item = m_Items("#" & CStr(lIdx))
+            Set Item = m_Items("#" & CStr(lIdx))
 
-            If item.Visible Then
-                tR.Right = tR.Left + item.Width
-                item.LeftMostItem = (cnt = 0)
-                item.RightMostItem = (tR.Right >= maxSpace)
-                
+            If Item.Visible Then
+                tR.Right = tR.Left + Item.Width
+                Item.LeftMostItem = (cnt = 0)
+                Item.RightMostItem = (tR.Right >= maxSpace)
                                 
-                Call m_oPaintMgr.DrawItem(oDC, tR, item, DrawTabItem)
+                Call m_oPaintMgr.DrawItem(oDC, tR, Item, DrawTabItem)
                 
                 If m_ShowShortcut And cnt < 10 Then
                     'we only support 0 to 9 shortcut number for the time being
-                    Call m_oPaintMgr.DrawShortcut(oDC, tR, item, cnt)
+                    Call m_oPaintMgr.DrawShortcut(oDC, tR, Item, cnt)
                     
                     'save item for shortcut key activation
-                    Set m_ShortcutItems(vbKey0 + cnt) = item
+                    Set m_ShortcutItems(vbKey0 + cnt) = Item
                 End If
                 
                 cnt = cnt + 1&
                 
-                If item.RightMostItem Then
+                If Item.RightMostItem Then
                     Exit For
                 End If
 
@@ -555,44 +554,48 @@ Friend Sub OnMouseMove(ByVal Button As MouseButtonConstants, ByVal x As Long, By
 End Sub
 
 Friend Sub OnMouseUp(ByVal Button As MouseButtonConstants, ByVal x As Long, ByVal y As Long)
-    Dim upItem As TabItem
-    Set upItem = HitTest(x, y)
+  Dim upItem As TabItem
+  Set upItem = HitTest(x, y)
+  
+  If Button = vbLeftButton Then
+    If m_oClickedTab Is Nothing Then Exit Sub
     
-    If Button = vbLeftButton Then
-        If m_oClickedTab Is Nothing Then Exit Sub
+    If m_oClickedTab.Index < 1 Then
+      m_oClickedTab.Selected = False 'Reset flag
+      Call RequestRedraw
+    End If
+    
+    If upItem Is m_oClickedTab Then 'MouseDown and MouseUp in the same item
         
-        If m_oClickedTab.Index < 1 Then
-            m_oClickedTab.Selected = False 'Reset flag
-            Call RequestRedraw
-        End If
+      If m_oClickedTab.Index > -1 Then 'nav button executed on mousedown
+        RaiseEvent MouseUp(vbLeftButton, upItem)
+        Call OnItemClick(m_oClickedTab)
+      End If
         
-        If upItem Is m_oClickedTab Then 'MouseDown and MouseUp in the same item
-            
-            If m_oClickedTab.Index > -1 Then 'nav button executed on mousedown
-                RaiseEvent MouseUp(vbLeftButton, upItem)
-                Call OnItemClick(m_oClickedTab)
-            End If
-            
-        ElseIf m_oClickedTab Is m_SelectedItem Then
+    ElseIf m_oClickedTab Is m_SelectedItem Then
 
-            If Not upItem Is Nothing Then
-                If upItem.Index > 0 Then
-                    Call SwapItem(m_oClickedTab, upItem)
-                End If
-            End If
+      If Not upItem Is Nothing Then
+        If upItem.Index > 0 Then
+          Call SwapItem(m_oClickedTab, upItem)
         End If
-
-    Else
-
-        If Not upItem Is Nothing Then
-            If upItem.Index < 1 Then Exit Sub
-        End If
-
-        RaiseEvent MouseUp(vbRightButton, upItem)
+      End If
     End If
 
-    Call m_ScrollTimer.TmrStop
-    Set m_oClickedTab = Nothing
+  Else
+
+    If Not upItem Is Nothing Then
+      If upItem.Index < 1 Then Exit Sub
+    End If
+
+    If Button = vbMiddleButton Then
+      RaiseEvent MouseUp(vbMiddleButton, upItem)
+    Else
+      RaiseEvent MouseUp(vbRightButton, upItem)
+    End If
+  End If
+
+  Call m_ScrollTimer.TmrStop
+  Set m_oClickedTab = Nothing
 End Sub
 
 Friend Sub OnMouseLeave()
@@ -605,16 +608,16 @@ Friend Sub OnMouseLeave()
 End Sub
 
 Friend Sub ShortcutActivate(ByVal key As Long)
-    Dim item As TabItem
+    Dim Item As TabItem
     
-    Set item = m_ShortcutItems(key)
-    If Not item Is Nothing Then
-        Call OnItemClick(item)
+    Set Item = m_ShortcutItems(key)
+    If Not Item Is Nothing Then
+        Call OnItemClick(Item)
     End If
 End Sub
 
 Public Function HitTest(ByVal x As Long, ByVal y As Long) As TabItem
-    Dim lIdx As Long, item As TabItem
+    Dim lIdx As Long, Item As TabItem
     Dim tR As RECT
     Dim lMaxWidth As Long
     
@@ -631,13 +634,13 @@ Public Function HitTest(ByVal x As Long, ByVal y As Long) As TabItem
             lMaxWidth = m_oPaintMgr.GetMaxWidth(m_lWidth)
 
             For lIdx = m_lFirstItem To m_Items.Count
-                Set item = m_Items("#" & lIdx)
+                Set Item = m_Items("#" & lIdx)
 
-                If item.Visible Then
-                    tR.Right = tR.Left + item.Width
+                If Item.Visible Then
+                    tR.Right = tR.Left + Item.Width
 
                     If PtInRect(tR, x, y) Then
-                        Set HitTest = item
+                        Set HitTest = Item
                         Exit For
                     End If
 
@@ -657,7 +660,7 @@ Public Function HitTest(ByVal x As Long, ByVal y As Long) As TabItem
 
 End Function
 
-Public Function RemoveItem(ByVal item As TabItem, Optional AutoActivateNext As Boolean = True) As Boolean
+Public Function RemoveItem(ByVal Item As TabItem, Optional AutoActivateNext As Boolean = True) As Boolean
     'We're synchronizing the collection key with its index,
     'since item access by key is much faster than by its index
     Dim key As String, itemIdx As Long
@@ -668,18 +671,18 @@ Public Function RemoveItem(ByVal item As TabItem, Optional AutoActivateNext As B
     Dim lCount As Long
     Dim isVisible As Boolean
     
-    If item Is Nothing Then Exit Function
+    If Item Is Nothing Then Exit Function
     
-    itemIdx = item.Index
+    itemIdx = Item.Index
     key = "#" & CStr(itemIdx)
-    isActive = item Is m_SelectedItem
+    isActive = Item Is m_SelectedItem
     
     If m_Items.Exists(key) Then
         
-        RaiseEvent ItemClosing(item, m_CloseFromButton, Cancel)
+        RaiseEvent ItemClosing(Item, m_CloseFromButton, Cancel)
         
         If Cancel Then Exit Function
-        isVisible = item.Visible
+        isVisible = Item.Visible
         Call LockUpdateRequest(True)
         Call m_Items.Remove(key)
         RemoveItem = True
@@ -709,9 +712,9 @@ Public Function RemoveItem(ByVal item As TabItem, Optional AutoActivateNext As B
                 If AutoActivateNext Then Set Me.SelectedItem = m_Items("#" & lCount)
                 
             ElseIf lCount = 1 Then
-                For Each item In m_Items
-                    If item.Visible Then
-                        Call EnsureVisible(item.Index)
+                For Each Item In m_Items
+                    If Item.Visible Then
+                        Call EnsureVisible(Item.Index)
                         Exit For
                     End If
                 Next
@@ -771,10 +774,10 @@ Friend Sub LockUpdateRequest(ByVal ShouldLock As Boolean, Optional ResetCount As
 
 End Sub
 
-Private Sub OnItemClick(ByVal item As TabItem)
+Private Sub OnItemClick(ByVal Item As TabItem)
     Dim Cancel As Boolean
     
-    Select Case item.Index
+    Select Case Item.Index
         Case 0 ' close button
             If Not m_SelectedItem Is Nothing Then
                 m_CloseFromButton = True
@@ -787,11 +790,11 @@ Private Sub OnItemClick(ByVal item As TabItem)
             Call m_ScrollTimer.TmrStart(Me, 50)
             
         Case Else
-            RaiseEvent ItemChanging(item, Cancel)
+            RaiseEvent ItemChanging(Item, Cancel)
 
             If Cancel = False Then
-                Set SelectedItem = item
-                RaiseEvent ItemClick(item)
+                Set SelectedItem = Item
+                RaiseEvent ItemClick(Item)
             End If
 
     End Select
@@ -829,22 +832,22 @@ Friend Property Get LeftItemOffset() As Long
 End Property
 
 Friend Function GetTotalWidth() As Long
-    Dim item As TabItem
+    Dim Item As TabItem
 
-    For Each item In m_Items
-        If item.Visible Then
-            GetTotalWidth = GetTotalWidth + item.Width
+    For Each Item In m_Items
+        If Item.Visible Then
+            GetTotalWidth = GetTotalWidth + Item.Width
         End If
     Next
 End Function
 
 Friend Property Get VisibleTabCount() As Long
-    Dim lIdx As Long, item As TabItem
+    Dim lIdx As Long, Item As TabItem
 
     If m_Items Is Nothing Then Exit Property
 
-    For Each item In m_Items
-        If item.Visible Then
+    For Each Item In m_Items
+        If Item.Visible Then
             lIdx = lIdx + 1&
         End If
     Next
@@ -950,10 +953,10 @@ Private Sub ITimer_Proc(ByVal lElapsedMS As Long, ByVal lTimerID As Long)
 End Sub
 
 Public Function IsAnyVisibleItem() As Boolean
-    Dim item As TabItem
+    Dim Item As TabItem
     
-    For Each item In m_Items
-        If item.Visible Then
+    For Each Item In m_Items
+        If Item.Visible Then
             IsAnyVisibleItem = True
             Exit For
         End If
